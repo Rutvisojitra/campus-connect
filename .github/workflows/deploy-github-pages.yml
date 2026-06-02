@@ -35,6 +35,8 @@ jobs:
 
       - name: Build
         working-directory: CampusConnect/frontend
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
         run: npm run build:github
 
       - name: Add SPA fallback

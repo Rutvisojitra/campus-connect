@@ -12,6 +12,8 @@ const ServerStatusContext = createContext({
 export const useServerStatus = () => useContext(ServerStatusContext)
 
 export const ServerStatusProvider = ({ children }) => {
+  const rawApiUrl = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || ''
+  const apiMonitoringEnabled = Boolean(rawApiUrl.trim()) || import.meta.env.DEV
   const [isOnline, setIsOnline] = useState(true)
   const [isChecking, setIsChecking] = useState(false)
   const [dbConnected, setDbConnected] = useState(true)
@@ -24,8 +26,7 @@ export const ServerStatusProvider = ({ children }) => {
   }, [isOnline, dbConnected, networkOnline])
 
   const getApiUrl = () => {
-    const rawUrl = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || ''
-    const trimmed = rawUrl.trim()
+    const trimmed = rawApiUrl.trim()
 
     if (!trimmed) {
       return '/api'
@@ -36,6 +37,12 @@ export const ServerStatusProvider = ({ children }) => {
   }
 
   const checkConnection = async () => {
+    if (!apiMonitoringEnabled) {
+      setIsOnline(true)
+      setDbConnected(true)
+      return
+    }
+
     if (isChecking) return
     setIsChecking(true)
     const activeUrl = getApiUrl()
@@ -87,6 +94,8 @@ export const ServerStatusProvider = ({ children }) => {
   }
 
   useEffect(() => {
+    if (!apiMonitoringEnabled) return
+
     let intervalId = null
 
     if (!isOnline) {
@@ -103,9 +112,15 @@ export const ServerStatusProvider = ({ children }) => {
     return () => {
       if (intervalId) clearInterval(intervalId)
     }
-  }, [isOnline])
+  }, [apiMonitoringEnabled, isOnline])
 
   useEffect(() => {
+    if (!apiMonitoringEnabled) {
+      window.__SERVER_ONLINE = true
+      window.__SERVER_DB_CONNECTED = true
+      return
+    }
+
     checkConnection()
 
     const handleApiOffline = () => {
@@ -134,7 +149,7 @@ export const ServerStatusProvider = ({ children }) => {
       window.removeEventListener('online', handleNetworkOnline)
       window.removeEventListener('offline', handleNetworkOffline)
     }
-  }, [])
+  }, [apiMonitoringEnabled])
 
   return (
     <ServerStatusContext.Provider value={{ isOnline, isChecking, checkConnection, dbConnected, networkOnline }}>

@@ -117,7 +117,7 @@ const allowedOrigins = [...new Set(clientUrls)]
 
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('.github.io')) {
       callback(null, true)
       return
     }
