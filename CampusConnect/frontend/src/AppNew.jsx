@@ -53,7 +53,7 @@ function App() {
   return (
     <ServerStatusProvider>
       <AttendanceProvider>
-        <Router>
+        <Router basename={import.meta.env.BASE_URL}>
           <Routes>
           {/* Role Selection - Entry Point */}
           <Route
