@@ -1,0 +1,8 @@
+{
+  "name": "campusconnect",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "build": "npm --prefix CampusConnect/frontend install && npm --prefix CampusConnect/frontend run build"
+  }
+}

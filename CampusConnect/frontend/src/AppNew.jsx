@@ -113,7 +113,7 @@ function App() {
         </Router>
       </AttendanceProvider>
       <ReconnectingOverlay />
-+      <DatabaseWarningBanner />
+      <DatabaseWarningBanner />
     </ServerStatusProvider>
   )
 }

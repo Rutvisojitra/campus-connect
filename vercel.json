@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npm --prefix CampusConnect/frontend install && npm --prefix CampusConnect/frontend run build",
+  "outputDirectory": "CampusConnect/frontend/dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
