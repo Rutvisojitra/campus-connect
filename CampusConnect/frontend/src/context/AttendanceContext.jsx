@@ -227,7 +227,7 @@ export const AttendanceProvider = ({ children }) => {
   const startAttendance = useCallback(
     async ({ lectureId, subjectId, subjectName, durationMinutes = 15, expectedTotal = 0 }) => {
       try {
-        const response = await apiClient.startAttendance({ lectureId, subjectId, durationMinutes })
+        const response = await apiClient.startAttendance({ lectureId, subjectId, subjectName, durationMinutes })
         if (!response.success) {
           throw new Error(response.message || 'Unable to start attendance')
         }

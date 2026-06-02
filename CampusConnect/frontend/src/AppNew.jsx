@@ -6,6 +6,7 @@ import './styles/App.css'
 import { ServerStatusProvider } from './context/ServerStatusContext'
 import { AttendanceProvider } from './context/AttendanceContext'
 import ReconnectingOverlay from './components/ReconnectingOverlay'
+import DatabaseWarningBanner from './components/DatabaseWarningBanner'
 import { useAuth } from './context/AuthContext'
 
 // Pages
@@ -112,6 +113,7 @@ function App() {
         </Router>
       </AttendanceProvider>
       <ReconnectingOverlay />
++      <DatabaseWarningBanner />
     </ServerStatusProvider>
   )
 }

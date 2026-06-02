@@ -45,10 +45,42 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
-// Response Interceptor: Capture connection/CORS errors instantly to activate offline mode
+// Response Interceptor: Retry transient failures then capture connection/CORS errors to activate offline mode
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const config = error.config || {}
+    const status = error.response?.status
+
+    // Do not retry auth or validation failures.
+    if ([400, 401, 403, 404].includes(status)) {
+      return Promise.reject(error)
+    }
+
+    // Do not retry file uploads.
+    if (config && config.data instanceof FormData) {
+      return Promise.reject(error)
+    }
+
+    // Retry transient errors only: network failures, 429, or server errors.
+    const retryable = !error.response || [429, 502, 503, 504].includes(status)
+
+    if (retryable) {
+      const MAX_RETRIES = Number(import.meta.env.VITE_API_MAX_RETRIES || 3)
+      config.__retryCount = config.__retryCount || 0
+
+      if (config.__retryCount < MAX_RETRIES) {
+        config.__retryCount += 1
+        const backoff = Math.min(1000 * 2 ** config.__retryCount, 10000)
+        const jitter = Math.random() * 500
+        const delay = backoff + jitter
+
+        console.debug(`[api] Retry #${config.__retryCount} after ${Math.round(delay)}ms for`, config.url)
+        await new Promise((resolve) => setTimeout(resolve, delay))
+        return api(config)
+      }
+    }
+
     // Network errors or no response -> backend unreachable
     if (!error.response) {
       console.warn('[api] Network or CORS error. Dispatching offline state.', error.message)
@@ -57,14 +89,14 @@ api.interceptors.response.use(
     }
 
     // If backend returns 503 or 502 -> treat as server offline
-    if ([502, 503, 504].includes(error.response.status)) {
-      console.warn('[api] Backend returned server error. Marking offline:', error.response.status)
+    if ([502, 503, 504].includes(status)) {
+      console.warn('[api] Backend returned server error. Marking offline:', status)
       window.dispatchEvent(new CustomEvent('api-offline'))
       return Promise.reject(error.response.data || { success: false, message: 'Server error' })
     }
 
     // Token invalid or expired
-    if (error.response.status === 401) {
+    if (status === 401) {
       window.dispatchEvent(new CustomEvent('api-token-invalid'))
       return Promise.reject(error.response.data || { success: false, message: 'Unauthorized' })
     }
@@ -73,6 +105,16 @@ api.interceptors.response.use(
   }
 )
 
+const buildApiError = (error, fallbackMessage) => {
+  const payload = error?.response?.data || error || {}
+  const message = payload?.message || payload?.error || error?.message || fallbackMessage
+  const err = new Error(message)
+  err.code = payload?.code || error?.code
+  err.status = payload?.status || error?.status || error?.response?.status
+  err.request = error?.request
+  err.response = error?.response
+  return err
+}
 
 const authService = {
   testBackend: async () => {
@@ -253,7 +295,7 @@ const authService = {
       const response = await api.post('/attendance/start', payload)
       return response.data
     } catch (error) {
-      throw error.response?.data || { message: 'Start attendance failed' }
+      throw buildApiError(error, 'Start attendance failed')
     }
   },
 

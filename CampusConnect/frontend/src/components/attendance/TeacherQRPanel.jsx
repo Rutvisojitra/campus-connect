@@ -50,7 +50,8 @@ export default function TeacherQRPanel() {
         expectedTotal: formState.expectedTotal
       })
     } catch (err) {
-      setError(err.message || 'Unable to start attendance')
+      const message = err?.message || err?.response?.data?.message || String(err) || 'Unable to start attendance'
+      setError(message)
     } finally {
       setIsSubmitting(false)
     }
@@ -173,13 +174,13 @@ export default function TeacherQRPanel() {
                     />
                   </label>
                   <label className="space-y-2 text-sm text-slate-300">
-                    Subject ID
+                    Subject code or ID
                     <input
                       required
                       name="subjectId"
                       value={formState.subjectId}
                       onChange={handleChange}
-                      placeholder="Existing subject object id"
+                      placeholder="Subject code or existing subject object id"
                       className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-white outline-none transition focus:border-cyan-400"
                     />
                   </label>
