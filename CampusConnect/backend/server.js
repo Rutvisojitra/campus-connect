@@ -40,30 +40,30 @@ if (process.env.MONGO_URI) {
 // ------------------------------------------------------------
 // Environment Validation
 // ------------------------------------------------------------
-const mongoURI = process.env.MONGO_URI || process.env.MONGODB_URI
+let mongoURI = process.env.MONGO_URI || process.env.MONGODB_URI
 const portValue = process.env.PORT
 const PORT = Number(portValue) || 5000
-const missingEnv = []
 
 if (!mongoURI) {
-  missingEnv.push('MONGO_URI or MONGODB_URI')
-}
-
-if (!process.env.JWT_SECRET) {
-  missingEnv.push('JWT_SECRET')
+  const localFallback = 'mongodb://127.0.0.1:27017/campusconnect'
+  console.warn('[env] MONGO_URI not set. Falling back to local MongoDB:', localFallback)
+  mongoURI = localFallback
 }
 
 if (!process.env.CLIENT_URL) {
-  missingEnv.push('CLIENT_URL')
+  const defaultClientUrl = 'http://localhost:5173'
+  console.warn('[env] CLIENT_URL not set. Defaulting to', defaultClientUrl)
+  process.env.CLIENT_URL = defaultClientUrl
+}
+
+if (!process.env.JWT_SECRET) {
+  const defaultJwtSecret = 'development-secret'
+  console.warn('[env] JWT_SECRET not set. Falling back to insecure development secret.')
+  process.env.JWT_SECRET = defaultJwtSecret
 }
 
 if (portValue && Number.isNaN(PORT)) {
   console.error('[env] Invalid PORT value:', portValue)
-}
-
-if (missingEnv.length) {
-  console.error('[env] Missing required environment variables:', missingEnv.join(', '))
-  console.error('[env] The server will continue to run, but production authentication and database connectivity may fail until these are provided.')
 }
 
 const isLocalMongo = mongoURI && /^mongodb:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(mongoURI)
@@ -87,10 +87,6 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express()
 
 app.locals.socketIOActive = false
-
-app.get('/health', (req, res) => {
-  res.status(200).json({ success: true, status: 'UP' })
-})
 
 // ------------------------------------------------------------
 // Stable Middleware Configuration
@@ -138,9 +134,6 @@ const corsOptions = {
 app.use(cors(corsOptions))
 app.options('*', cors(corsOptions))
 
-app.use('/api', apiLimiter)
-app.use('/api/auth', authLimiter)
-
 // ------------------------------------------------------------
 // API Routing
 // ------------------------------------------------------------
@@ -169,6 +162,9 @@ app.get('/api/health', (req, res) => {
     socketio: app.locals.socketIOActive ? 'active' : 'inactive'
   })
 })
+
+app.use('/api', apiLimiter)
+app.use('/api/auth', authLimiter)
 
 // Provide a simple non-namespaced health endpoint useful for external checks
 app.get('/health', (req, res) => {
@@ -217,13 +213,6 @@ initSocket(io)
 // expose io to controllers
 setIO(io)
 app.locals.socketIOActive = true
-
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'Backend running successfully'
-  });
-});
 
 httpServer.listen(PORT, () => {
   console.log('[server] ✅ Server running on port', PORT)

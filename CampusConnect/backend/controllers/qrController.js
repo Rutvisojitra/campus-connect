@@ -1,8 +1,11 @@
 // controllers/qrController.js
+import mongoose from 'mongoose'
 import QRSession from '../models/QRSession.js'
 import Subject from '../models/Subject.js'
 import { startRotation, stopRotation, generateQrToken, rotateNow } from '../utils/qrManager.js'
 import { getIO } from '../utils/socketServer.js'
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
  * Start attendance: create a QRSession and begin rotating tokens
@@ -10,12 +13,46 @@ import { getIO } from '../utils/socketServer.js'
 export const startAttendance = async (req, res) => {
   try {
     const teacherId = req.user.userId
-    const { subjectId, lectureId, durationMinutes } = req.body
+    let { subjectId, lectureId, subjectName, durationMinutes } = req.body
 
     if (!subjectId || !lectureId) return res.status(400).json({ success: false, message: 'subjectId and lectureId required' })
 
-    const subject = await Subject.findById(subjectId)
-    if (!subject) return res.status(404).json({ success: false, message: 'Subject not found' })
+    let subject = null
+    const normalizedSubjectId = typeof subjectId === 'string' ? subjectId.trim() : subjectId
+    const normalizedSubjectName = typeof subjectName === 'string' ? subjectName.trim() : ''
+
+    if (mongoose.isValidObjectId(normalizedSubjectId)) {
+      subject = await Subject.findById(normalizedSubjectId)
+    }
+
+    if (!subject) {
+      subject = await Subject.findOne({ code: normalizedSubjectId })
+    }
+
+    if (!subject) {
+      subject = await Subject.findOne({ code: new RegExp(`^${escapeRegExp(normalizedSubjectId)}$`, 'i') })
+    }
+
+    if (!subject) {
+      subject = await Subject.findOne({ name: new RegExp(`^${escapeRegExp(normalizedSubjectId)}$`, 'i') })
+    }
+
+    if (!subject && normalizedSubjectName) {
+      subject = await Subject.findOne({ name: new RegExp(`^${escapeRegExp(normalizedSubjectName)}$`, 'i') })
+    }
+
+    if (!subject) {
+      const newSubject = new Subject({
+        code: normalizedSubjectId,
+        name: normalizedSubjectName || normalizedSubjectId,
+        teacher: teacherId
+      })
+      await newSubject.save()
+      subject = newSubject
+      console.log('[qr] Auto-created subject for attendance:', subject.code, subject.name)
+    }
+
+    subjectId = subject._id
 
     // Create session
     const expiresAt = durationMinutes ? new Date(Date.now() + durationMinutes * 60000) : null
