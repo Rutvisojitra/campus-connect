@@ -1,0 +1,10 @@
+// utils/socketServer.js
+let ioInstance = null
+
+export const setIO = (io) => {
+  ioInstance = io
+}
+
+export const getIO = () => ioInstance
+
+export default { setIO, getIO }

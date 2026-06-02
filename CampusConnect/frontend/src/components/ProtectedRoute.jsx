@@ -1,18 +1,22 @@
-// src/components/ProtectedRoute.jsx
-import { Navigate } from 'react-router-dom';
-import { getCurrentUser } from '../services/authService';
+import React from 'react'
+import { Navigate, useLocation } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
-/**
- * Protected Route Component - restricts access to authenticated users
- */
-function ProtectedRoute({ children }) {
-  const user = getCurrentUser();
+export default function ProtectedRoute({ children, requiredRole = null }) {
+  const location = useLocation()
+  const { user } = useAuth()
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from: location }} />
   }
 
-  return children;
-}
+  if (user.firstLogin && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />
+  }
 
-export default ProtectedRoute;
+  if (requiredRole && user.role !== requiredRole) {
+    return <Navigate to="/login" replace />
+  }
+
+  return children
+}

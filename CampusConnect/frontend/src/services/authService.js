@@ -1,7 +1,19 @@
 // Authentication Service - handles college ID based authentication
 
 const STUDENTS_KEY = 'campusconnect_students';
+const TEACHERS_KEY = 'campusconnect_teachers';
+const ADMINS_KEY = 'campusconnect_admins';
 const USER_SESSION_KEY = 'campusconnect_user_session';
+
+const getAllTeachers = () => {
+  const data = localStorage.getItem(TEACHERS_KEY);
+  return data ? JSON.parse(data) : [];
+};
+
+const getAllAdmins = () => {
+  const data = localStorage.getItem(ADMINS_KEY);
+  return data ? JSON.parse(data) : [];
+};
 
 // Regex patterns for validation
 const COLLEGE_ID_PATTERN = /^\d{2}[A-Z]{2}\d{3}$/; // 24CP001
@@ -123,42 +135,50 @@ export const registerStudent = (fullName, collegeID, email) => {
 };
 
 /**
- * Login student using College ID or Email with Password
+ * Login student using College ID or Email with Password and Role
  */
-export const loginStudent = (identifier, password, rememberMe = false) => {
+export const loginStudent = (identifier, password, role = 'student', rememberMe = false) => {
   // Validations
   if (!identifier || !password) {
     return { success: false, message: 'Please fill in all fields' };
   }
 
-  const students = getAllStudents();
+  let users = [];
+  if (role === 'teacher') {
+    users = getAllTeachers();
+  } else if (role === 'admin') {
+    users = getAllAdmins();
+  } else {
+    users = getAllStudents();
+  }
 
-  // Find student by College ID or Email
-  const student = students.find(
-    (s) =>
-      s.collegeID.toUpperCase() === identifier.toUpperCase() ||
-      s.email.toLowerCase() === identifier.toLowerCase()
+  // Find user by College ID or Email
+  const user = users.find(
+    (u) =>
+      (u.collegeID && u.collegeID.toUpperCase() === identifier.toUpperCase()) ||
+      (u.email && u.email.toLowerCase() === identifier.toLowerCase())
   );
 
-  if (!student) {
+  if (!user) {
     return {
       success: false,
-      message: 'Account not found! Please Sign Up first.',
+      message: `Account not found for role ${role === 'teacher' ? 'Staff/Teacher' : role === 'admin' ? 'Administrator' : 'Student'}!`,
     };
   }
 
   // Check password
-  if (student.password !== password) {
+  if (user.password !== password) {
     return { success: false, message: 'Incorrect password' };
   }
 
   // Create session
   const session = {
-    id: student.id,
-    fullName: student.fullName,
-    collegeID: student.collegeID,
-    email: student.email,
-    passwordChanged: student.passwordChanged,
+    id: user.id,
+    fullName: user.fullName,
+    collegeID: user.collegeID || '',
+    email: user.email,
+    role: role,
+    passwordChanged: user.passwordChanged,
     loginTime: new Date().toISOString(),
     rememberMe: rememberMe,
   };
@@ -169,7 +189,7 @@ export const loginStudent = (identifier, password, rememberMe = false) => {
     success: true,
     message: 'Login successful!',
     student: session,
-    requiresPasswordChange: !student.passwordChanged,
+    requiresPasswordChange: !user.passwordChanged,
   };
 };
 
@@ -279,5 +299,39 @@ export const initializeDemoData = () => {
     ];
 
     saveStudents(demoStudents);
+  }
+
+  const existingTeachers = getAllTeachers();
+  if (existingTeachers.length === 0) {
+    const demoTeachers = [
+      {
+        id: 't1',
+        fullName: 'Prof. Sarah Jenkins',
+        collegeID: 'TEACHER01',
+        email: 'teacher@college.edu',
+        password: 'password123',
+        role: 'teacher',
+        passwordChanged: true,
+        createdAt: new Date().toISOString(),
+      }
+    ];
+    localStorage.setItem(TEACHERS_KEY, JSON.stringify(demoTeachers));
+  }
+
+  const existingAdmins = getAllAdmins();
+  if (existingAdmins.length === 0) {
+    const demoAdmins = [
+      {
+        id: 'a1',
+        fullName: 'Principal Dev Kumar',
+        collegeID: 'ADMIN01',
+        email: 'admin@college.edu',
+        password: 'password123',
+        role: 'admin',
+        passwordChanged: true,
+        createdAt: new Date().toISOString(),
+      }
+    ];
+    localStorage.setItem(ADMINS_KEY, JSON.stringify(demoAdmins));
   }
 };

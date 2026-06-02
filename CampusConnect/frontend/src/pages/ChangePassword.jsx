@@ -1,280 +1,248 @@
-// src/pages/ChangePassword.jsx
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { changePassword, getCurrentUser, logoutUser } from '../services/authService';
-import '../styles/Auth.css';
+import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { FaLock, FaEye, FaEyeSlash } from 'react-icons/fa6'
+import authService from '../services/apiClient'
+import { useAuth } from '../context/AuthContext'
 
-/**
- * Change Password Page Component
- * Shown after first login or when user voluntarily changes password
- */
-function ChangePassword() {
-  const navigate = useNavigate();
-  const user = getCurrentUser();
-
+export default function ChangePassword() {
+  const navigate = useNavigate()
   const [formData, setFormData] = useState({
-    oldPassword: '',
+    currentPassword: '',
     newPassword: '',
-    confirmPassword: '',
-  });
-
-  const [showPassword, setShowPassword] = useState({
-    old: false,
+    confirmPassword: ''
+  })
+  const { user, updateUser, refreshUser } = useAuth()
+  const [showPasswords, setShowPasswords] = useState({
+    current: false,
     new: false,
-    confirm: false,
-  });
-
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [forceChange, setForceChange] = useState(false);
-
-  // Check if user is logged in and needs to change password
-  useEffect(() => {
-    if (!user) {
-      navigate('/login');
-      return;
-    }
-
-    // Check if this is a forced password change (first login)
-    if (!user.passwordChanged) {
-      setForceChange(true);
-    }
-  }, [user, navigate]);
+    confirm: false
+  })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
+    const { name, value } = e.target
+    setFormData(prev => ({
       ...prev,
-      [name]: value,
-    }));
-    setError('');
-  };
+      [name]: value
+    }))
+    setError('')
+  }
 
-  const toggleShowPassword = (field) => {
-    setShowPassword((prev) => ({
-      ...prev,
-      [field]: !prev[field],
-    }));
-  };
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccess('')
+    setLoading(true)
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
-    // Validate all fields
-    if (!formData.oldPassword || !formData.newPassword || !formData.confirmPassword) {
-      setError('All fields are required');
-      setLoading(false);
-      return;
-    }
-
-    if (formData.newPassword.length < 6) {
-      setError('New password must be at least 6 characters');
-      setLoading(false);
-      return;
-    }
-
-    if (formData.newPassword !== formData.confirmPassword) {
-      setError('New password and confirm password do not match');
-      setLoading(false);
-      return;
-    }
-
-    if (formData.oldPassword === formData.newPassword) {
-      setError('New password cannot be the same as old password');
-      setLoading(false);
-      return;
-    }
-
-    // Simulate API call
-    setTimeout(() => {
-      const result = changePassword(
-        user.id,
-        formData.oldPassword,
-        formData.newPassword
-      );
-
-      if (result.success) {
-        setSuccess(result.message);
-        setFormData({
-          oldPassword: '',
-          newPassword: '',
-          confirmPassword: '',
-        });
-
-        setTimeout(() => {
-          if (forceChange) {
-            // Redirect to dashboard after forced password change
-            navigate('/dashboard');
-          } else {
-            // Redirect to dashboard after voluntary change
-            navigate('/dashboard');
-          }
-        }, 1500);
-      } else {
-        setError(result.message);
+    try {
+      // Validation
+      if (!formData.currentPassword || !formData.newPassword || !formData.confirmPassword) {
+        setError('Please fill in all fields')
+        setLoading(false)
+        return
       }
 
-      setLoading(false);
-    }, 500);
-  };
+      if (formData.newPassword.length < 6) {
+        setError('Password must be at least 6 characters')
+        setLoading(false)
+        return
+      }
 
-  const handleLogout = () => {
-    logoutUser();
-    navigate('/login');
-  };
+      if (formData.newPassword !== formData.confirmPassword) {
+        setError('Passwords do not match')
+        setLoading(false)
+        return
+      }
 
-  if (!user) {
-    return null;
+      const response = await authService.changePassword(
+        formData.currentPassword,
+        formData.newPassword,
+        formData.confirmPassword
+      )
+
+      if (response.success) {
+        const updatedUser = response.user || await refreshUser()
+        if (updatedUser) {
+          updateUser(updatedUser)
+        }
+
+        setSuccess(response.message)
+        setTimeout(() => {
+          switch (updatedUser?.role) {
+            case 'student':
+              navigate('/student-dashboard')
+              break
+            case 'faculty':
+              navigate('/teacher-dashboard')
+              break
+            case 'admin':
+              navigate('/admin-dashboard')
+              break
+            default:
+              navigate('/')
+          }
+        }, 1200)
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to change password')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const togglePasswordVisibility = (field) => {
+    setShowPasswords(prev => ({
+      ...prev,
+      [field]: !prev[field]
+    }))
   }
 
   return (
-    <div className="auth-container">
-      <div className="auth-card">
-        <div className="auth-header">
-          <h1>🔐 Change Password</h1>
-          <p>{forceChange ? 'First Login - Update Your Password' : 'Update Your Password'}</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center px-4 py-8">
+      {/* Background Elements */}
+      <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
+
+      <div className="relative z-10 w-full max-w-md">
+        {/* Header */}
+        <div className="text-center mb-8 animate-fade-in">
+          <h1 className="text-3xl font-bold text-white mb-2">🎓 CampusConnect</h1>
+          <p className="text-gray-400">Change Your Password</p>
+          <p className="text-sm text-gray-500 mt-2">This is required for your first login</p>
         </div>
 
-        {forceChange && (
-          <div className="info-box" style={{ backgroundColor: '#FFF3CD', borderColor: '#FFC107' }}>
-            <p>
-              <strong>⚠️ Required Action:</strong> You must change your password
-              before accessing the dashboard. Your default password is your College
-              ID.
+        {/* Card */}
+        <div className="bg-slate-800/80 backdrop-blur-xl border border-slate-700 rounded-2xl shadow-2xl p-8 animate-slide-in">
+          {/* Success Message */}
+          {success && (
+            <div className="mb-6 p-4 bg-green-500/10 border border-green-500/50 rounded-lg">
+              <p className="text-green-400 text-sm">✓ {success}</p>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-lg">
+              <p className="text-red-400 text-sm">✗ {error}</p>
+            </div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Current Password */}
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">Current Password</label>
+              <div className="relative">
+                <FaLock className="absolute left-4 top-3.5 text-gray-500" />
+                <input
+                  type={showPasswords.current ? 'text' : 'password'}
+                  name="currentPassword"
+                  value={formData.currentPassword}
+                  onChange={handleChange}
+                  placeholder="Enter your current password"
+                  disabled={loading}
+                  className="w-full pl-10 pr-12 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => togglePasswordVisibility('current')}
+                  className="absolute right-4 top-3.5 text-gray-500 hover:text-gray-400"
+                  disabled={loading}
+                >
+                  {showPasswords.current ? <FaEyeSlash /> : <FaEye />}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">For first login, use your College ID</p>
+            </div>
+
+            {/* New Password */}
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">New Password</label>
+              <div className="relative">
+                <FaLock className="absolute left-4 top-3.5 text-gray-500" />
+                <input
+                  type={showPasswords.new ? 'text' : 'password'}
+                  name="newPassword"
+                  value={formData.newPassword}
+                  onChange={handleChange}
+                  placeholder="Enter your new password"
+                  disabled={loading}
+                  className="w-full pl-10 pr-12 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => togglePasswordVisibility('new')}
+                  className="absolute right-4 top-3.5 text-gray-500 hover:text-gray-400"
+                  disabled={loading}
+                >
+                  {showPasswords.new ? <FaEyeSlash /> : <FaEye />}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Minimum 6 characters</p>
+            </div>
+
+            {/* Confirm Password */}
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">Confirm Password</label>
+              <div className="relative">
+                <FaLock className="absolute left-4 top-3.5 text-gray-500" />
+                <input
+                  type={showPasswords.confirm ? 'text' : 'password'}
+                  name="confirmPassword"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                  placeholder="Confirm your new password"
+                  disabled={loading}
+                  className="w-full pl-10 pr-12 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => togglePasswordVisibility('confirm')}
+                  className="absolute right-4 top-3.5 text-gray-500 hover:text-gray-400"
+                  disabled={loading}
+                >
+                  {showPasswords.confirm ? <FaEyeSlash /> : <FaEye />}
+                </button>
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={loading}
+              className={`
+                w-full py-3 px-4 rounded-lg font-semibold text-white transition
+                ${loading
+                  ? 'bg-slate-600 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 active:scale-95'
+                }
+              `}
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="animate-spin">⊙</span> Updating...
+                </span>
+              ) : (
+                'Update Password'
+              )}
+            </button>
+          </form>
+
+          {/* Info Box */}
+          <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+            <p className="text-xs text-gray-400">
+              💡 Choose a strong password combining uppercase, lowercase, and numbers for better security.
             </p>
           </div>
-        )}
-
-        {/* Error Alert */}
-        {error && <div className="alert alert-error">{error}</div>}
-
-        {/* Success Alert */}
-        {success && <div className="alert alert-success">{success}</div>}
-
-        <form onSubmit={handleSubmit} className="auth-form">
-          {/* Current Password */}
-          <div className="form-group">
-            <label htmlFor="oldPassword">Current Password</label>
-            <div className="password-input-wrapper">
-              <input
-                type={showPassword.old ? 'text' : 'password'}
-                id="oldPassword"
-                name="oldPassword"
-                placeholder="Enter your current password"
-                value={formData.oldPassword}
-                onChange={handleChange}
-                className="form-input"
-                disabled={loading}
-              />
-              <button
-                type="button"
-                className="password-toggle"
-                onClick={() => toggleShowPassword('old')}
-                disabled={loading}
-                title={showPassword.old ? 'Hide' : 'Show'}
-              >
-                {showPassword.old ? '🙈' : '👁️'}
-              </button>
-            </div>
-            <small className="help-text">
-              {forceChange ? `Your College ID: ${user.collegeID}` : ''}
-            </small>
-          </div>
-
-          {/* New Password */}
-          <div className="form-group">
-            <label htmlFor="newPassword">New Password</label>
-            <div className="password-input-wrapper">
-              <input
-                type={showPassword.new ? 'text' : 'password'}
-                id="newPassword"
-                name="newPassword"
-                placeholder="Enter new password (min 6 characters)"
-                value={formData.newPassword}
-                onChange={handleChange}
-                className="form-input"
-                disabled={loading}
-              />
-              <button
-                type="button"
-                className="password-toggle"
-                onClick={() => toggleShowPassword('new')}
-                disabled={loading}
-                title={showPassword.new ? 'Hide' : 'Show'}
-              >
-                {showPassword.new ? '🙈' : '👁️'}
-              </button>
-            </div>
-            <small className="help-text">
-              Minimum 6 characters required
-            </small>
-          </div>
-
-          {/* Confirm Password */}
-          <div className="form-group">
-            <label htmlFor="confirmPassword">Confirm Password</label>
-            <div className="password-input-wrapper">
-              <input
-                type={showPassword.confirm ? 'text' : 'password'}
-                id="confirmPassword"
-                name="confirmPassword"
-                placeholder="Re-enter new password"
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                className="form-input"
-                disabled={loading}
-              />
-              <button
-                type="button"
-                className="password-toggle"
-                onClick={() => toggleShowPassword('confirm')}
-                disabled={loading}
-                title={showPassword.confirm ? 'Hide' : 'Show'}
-              >
-                {showPassword.confirm ? '🙈' : '👁️'}
-              </button>
-            </div>
-          </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            className="btn btn-primary btn-block"
-            disabled={loading}
-          >
-            {loading ? 'Updating...' : 'Update Password'}
-          </button>
-        </form>
-
-        {/* Logout Button (if not forced change) */}
-        {!forceChange && (
-          <button
-            onClick={handleLogout}
-            className="btn btn-secondary btn-block"
-            style={{ marginTop: '1rem' }}
-          >
-            Cancel & Logout
-          </button>
-        )}
-
-        {/* Password Requirements */}
-        <div className="demo-info">
-          <details>
-            <summary>Password Requirements</summary>
-            <div className="demo-credentials">
-              <p>✓ Minimum 6 characters</p>
-              <p>✓ Cannot be same as old password</p>
-              <p>✓ Must contain letters and numbers (recommended)</p>
-            </div>
-          </details>
         </div>
+
+        {/* Footer */}
+        <p className="text-center text-gray-500 text-xs mt-6">
+          CampusConnect © 2024 • All rights reserved
+        </p>
       </div>
     </div>
-  );
+  )
 }
-
-export default ChangePassword;

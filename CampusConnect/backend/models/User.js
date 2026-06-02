@@ -19,6 +19,7 @@ const userSchema = new mongoose.Schema({
     required: [true, 'Please provide an email'],
     unique: true,
     lowercase: true,
+    trim: true,
     match: [/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/, 'Please provide a valid email']
   },
   password: {
@@ -26,6 +27,13 @@ const userSchema = new mongoose.Schema({
     required: [true, 'Please provide a password'],
     minlength: 6,
     select: false // Don't return password by default
+  },
+  collegeId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    lowercase: true,
+    trim: true
   },
   rollNumber: {
     type: String,
@@ -60,6 +68,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['student', 'faculty', 'admin'],
     default: 'student'
+  },
+  firstLogin: {
+    type: Boolean,
+    default: true
   },
   isActive: {
     type: Boolean,
@@ -130,10 +142,28 @@ userSchema.methods.comparePassword = async function(enteredPassword) {
  * Get public user data
  */
 userSchema.methods.getPublicData = function() {
-  const user = this.toObject()
+  const user = this.toObject({ getters: true })
+  // Remove sensitive fields
   delete user.password
   delete user.verificationToken
-  return user
+  delete user.__v
+
+  // Provide compatibility field expected by frontend
+  user.avatar = user.profileImage || null
+
+  return {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    collegeId: user.collegeId || null,
+    avatar: user.avatar,
+    firstLogin: Boolean(user.firstLogin),
+    isActive: Boolean(user.isActive),
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    lastLogin: user.lastLogin
+  }
 }
 
 export default mongoose.model('User', userSchema)

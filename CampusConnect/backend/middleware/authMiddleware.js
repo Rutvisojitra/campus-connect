@@ -4,37 +4,42 @@
 // ============================================================
 
 import jwt from 'jsonwebtoken'
+import User from '../models/User.js'
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
+const JWT_EXPIRE = process.env.JWT_EXPIRE || '7d'
 
 /**
- * Protect Routes - Verify JWT Token
+ * Protect Routes - Verify Bearer JWT Token and attach current user
  */
 export const protect = async (req, res, next) => {
   let token
 
-  // Get token from headers
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1]
   }
 
-  // Check if token exists
   if (!token) {
-    return res.status(401).json({
-      success: false,
-      message: 'Not authorized to access this route'
-    })
+    return res.status(401).json({ success: false, message: 'Not authorized: token missing' })
   }
 
   try {
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET)
-    req.user = decoded
+    const decoded = jwt.verify(token, JWT_SECRET)
+
+    // Attach minimal token info
+    req.user = { userId: decoded.userId, role: decoded.role }
+
+    // Fetch fresh user data from DB (exclude password)
+    const user = await User.findById(decoded.userId)
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Not authorized: user not found' })
+    }
+
+    req.currentUser = user.getPublicData()
     next()
   } catch (error) {
-    return res.status(401).json({
-      success: false,
-      message: 'Token is not valid',
-      error: error.message
-    })
+    console.error('[auth] JWT verification failed:', error.message)
+    return res.status(401).json({ success: false, message: 'Invalid or expired token' })
   }
 }
 
@@ -43,11 +48,9 @@ export const protect = async (req, res, next) => {
  */
 export const authorize = (...roles) => {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: `User role '${req.user.role}' is not authorized to access this route`
-      })
+    const role = req.user?.role
+    if (!role || !roles.includes(role)) {
+      return res.status(403).json({ success: false, message: `User role '${role}' is not authorized to access this route` })
     }
     next()
   }
@@ -56,8 +59,6 @@ export const authorize = (...roles) => {
 /**
  * Generate JWT Token
  */
-export const generateToken = (userId) => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '7d'
-  })
+export const generateToken = (userId, role) => {
+  return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: JWT_EXPIRE })
 }
