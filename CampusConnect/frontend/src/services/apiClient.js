@@ -4,6 +4,8 @@ import axios from 'axios'
 // If no API URL is configured, use a relative /api path so the frontend works with Vite proxy
 // during local development and same-origin deployment in production.
 const rawApiUrl = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || ''
+const hasConfiguredApiUrl = Boolean(rawApiUrl.trim())
+const apiUnavailableInProduction = !import.meta.env.DEV && !hasConfiguredApiUrl
 const defaultApiUrl = rawApiUrl.trim() || '/api'
 const normalizedApiUrl = defaultApiUrl.replace(/\/+$/g, '').trim()
 const API_BASE_URL = normalizedApiUrl.startsWith('/')
@@ -15,6 +17,15 @@ const API_BASE_URL = normalizedApiUrl.startsWith('/')
 console.log('[api] Initializing API Client with base URL:', API_BASE_URL)
 
 const DEFAULT_TIMEOUT = Number(import.meta.env.VITE_API_TIMEOUT || 10000)
+
+const buildApiNotConfiguredError = () => {
+  const err = new Error(
+    'Signup requires a live backend. Configure VITE_API_URL for this deployment before creating accounts.'
+  )
+  err.code = 'API_NOT_CONFIGURED'
+  err.success = false
+  return err
+}
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -28,6 +39,10 @@ const api = axios.create({
 // Request Interceptor: Attach JWT Token automatically if it exists
 api.interceptors.request.use(
   (config) => {
+    if (apiUnavailableInProduction) {
+      return Promise.reject(buildApiNotConfiguredError())
+    }
+
     // If frontend has detected server is offline, short-circuit safe requests
     if (window.__SERVER_ONLINE === false) {
       const err = new Error('Server offline')
@@ -172,8 +187,17 @@ const authService = {
       console.error('[api] Register failed:', {
         status: error.response?.status,
         data: error.response?.data,
-        message: error.message
+        message: error.message,
+        code: error.code
       })
+
+      if (error.code === 'API_NOT_CONFIGURED') {
+        throw {
+          success: false,
+          message: error.message,
+          code: error.code
+        }
+      }
 
       if (error.response?.data) {
         throw error.response.data
