@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FaUser, FaRightFromBracket, FaUsers, FaFileLines, FaClipboard, FaBullhorn } from 'react-icons/fa6'
-import authService from '../services/apiClient'
+import { useAuth } from '../context/AuthContext'
 import TeacherQRPanel from '../components/attendance/TeacherQRPanel'
 import AttendanceStats from '../components/attendance/AttendanceStats'
 import AttendanceSessionTimer from '../components/attendance/AttendanceSessionTimer'
@@ -9,22 +9,27 @@ import LiveAttendanceList from '../components/attendance/LiveAttendanceList'
 
 export default function TeacherDashboard() {
   const navigate = useNavigate()
-  const [user, setUser] = useState(null)
+  const { user, logout } = useAuth()
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const loggedInUser = authService.getLocalUser()
-    if (!loggedInUser || loggedInUser.role !== 'faculty') {
-      navigate('/login')
+    if (!user || (user.role !== 'faculty' && user.role !== 'admin')) {
+      navigate('/login', { replace: true })
       return
     }
-    setUser(loggedInUser)
     setLoading(false)
-  }, [navigate])
+  }, [user, navigate])
 
-  const handleLogout = () => {
-    authService.logout()
-    navigate('/')
+  const handleLogout = async () => {
+    try {
+      await logout()
+      // Clear any session data
+      navigate('/login', { replace: true })
+    } catch (error) {
+      console.error('[dashboard] Logout failed:', error)
+      // Force logout even if API call fails
+      navigate('/login', { replace: true })
+    }
   }
 
   if (loading) {

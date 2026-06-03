@@ -8,7 +8,7 @@ const formFields = {
   lectureId: '',
   subjectId: '',
   subjectName: '',
-  durationMinutes: 15,
+  durationMinutes: 45,
   expectedTotal: 30
 }
 

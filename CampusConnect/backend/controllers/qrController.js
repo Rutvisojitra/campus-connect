@@ -9,6 +9,9 @@ const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
  * Start attendance: create a QRSession and begin rotating tokens
+ * POST /api/attendance/start
+ * Session duration defaults to 45 minutes
+ * QR token rotates every 15 seconds for security
  */
 export const startAttendance = async (req, res) => {
   try {
@@ -16,6 +19,12 @@ export const startAttendance = async (req, res) => {
     let { subjectId, lectureId, subjectName, durationMinutes } = req.body
 
     if (!subjectId || !lectureId) return res.status(400).json({ success: false, message: 'subjectId and lectureId required' })
+
+    // Default to 45-minute session if not specified
+    if (!durationMinutes || durationMinutes < 5) {
+      durationMinutes = 45
+      console.log('[qr] Using default 45-minute session duration')
+    }
 
     let subject = null
     const normalizedSubjectId = typeof subjectId === 'string' ? subjectId.trim() : subjectId
@@ -54,23 +63,57 @@ export const startAttendance = async (req, res) => {
 
     subjectId = subject._id
 
-    // Create session
-    const expiresAt = durationMinutes ? new Date(Date.now() + durationMinutes * 60000) : null
-    const session = new QRSession({ teacher: teacherId, subject: subjectId, lectureId, active: true, expiresAt })
+    // Create session with calculated expiration
+    const expiresAt = new Date(Date.now() + durationMinutes * 60000)
+    const session = new QRSession({ 
+      teacher: teacherId, 
+      subject: subjectId, 
+      lectureId, 
+      active: true, 
+      rotationCount: 0,
+      expiresAt 
+    })
     await session.save()
 
-    // start rotating tokens for this session (rotateNow is invoked by startRotation immediately)
+    console.log('[qr] Session created', {
+      sessionId: session._id,
+      lectureId,
+      duration: durationMinutes,
+      expiresAt: expiresAt.toISOString()
+    })
+
+    // Start rotating tokens - rotation happens every 15 seconds
     await startRotation(session)
 
-    // Provide the most recent token to the starter by rotating now and returning the token
+    // Return the initial token
     const rotation = await rotateNow(session._id.toString())
 
     const io = getIO()
     if (io) {
-      io.to(`qr_${session._id.toString()}`).emit('attendance:started', { qrSessionId: session._id.toString(), lectureId, token: rotation?.token, expiresAt: rotation?.expiresAt })
+      io.to(`qr_${session._id.toString()}`).emit('attendance:started', { 
+        qrSessionId: session._id.toString(), 
+        lectureId, 
+        token: rotation?.token, 
+        expiresAt: rotation?.expiresAt,
+        rotationCount: rotation?.rotationCount,
+        sessionDuration: durationMinutes
+      })
     }
 
-    return res.status(201).json({ success: true, message: 'Attendance session started', qrSessionId: session._id, token: rotation?.token, expiresAt: session.expiresAt })
+    return res.status(201).json({ 
+      success: true, 
+      message: 'Attendance session started', 
+      qrSessionId: session._id, 
+      token: rotation?.token, 
+      expiresAt: session.expiresAt,
+      rotationCount: rotation?.rotationCount,
+      sessionDuration: durationMinutes,
+      sessionDetails: {
+        lectureId,
+        subjectName: subject.name,
+        rotationIntervalSeconds: 15
+      }
+    })
   } catch (error) {
     console.error('[qr] startAttendance error', error)
     return res.status(500).json({ success: false, message: 'Error starting attendance' })

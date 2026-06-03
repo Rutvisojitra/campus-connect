@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FaKey, FaPen, FaRightFromBracket, FaTrash, FaUserPlus, FaUsers } from 'react-icons/fa6'
-import authService from '../services/apiClient'
+import { useAuth } from '../context/AuthContext'
 
 const emptyForm = {
   name: '',
@@ -15,7 +15,7 @@ const emptyForm = {
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
-  const [user, setUser] = useState(null)
+  const { user, logout } = useAuth()
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -26,38 +26,23 @@ export default function AdminDashboard() {
   const [formData, setFormData] = useState(emptyForm)
 
   useEffect(() => {
-    const loggedInUser = authService.getLocalUser()
-    if (!loggedInUser || loggedInUser.role !== 'admin') {
-      navigate('/login')
+    if (!user || user.role !== 'admin') {
+      navigate('/login', { replace: true })
       return
     }
-    setUser(loggedInUser)
     fetchUsers()
-  }, [navigate])
+  }, [user, navigate])
 
-  const fetchUsers = async () => {
-    setLoading(true)
-    setError('')
+  const handleLogout = async () => {
     try {
-      const response = await authService.getAllUsers()
-      if (response.success) {
-        setUsers(response.users)
-      }
-    } catch (err) {
-      setError(err.message || 'Unable to load users.')
-    } finally {
-      setLoading(false)
+      await logout()
+      // Clear any session data
+      navigate('/login', { replace: true })
+    } catch (error) {
+      console.error('[dashboard] Logout failed:', error)
+      // Force logout even if API call fails
+      navigate('/login', { replace: true })
     }
-  }
-
-  const filteredUsers = useMemo(() => {
-    if (filter === 'all') return users
-    return users.filter(item => item.role === filter)
-  }, [filter, users])
-
-  const handleLogout = () => {
-    authService.logout()
-    navigate('/')
   }
 
   const handleInputChange = (e) => {

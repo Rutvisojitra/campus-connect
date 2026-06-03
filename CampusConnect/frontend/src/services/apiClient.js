@@ -18,6 +18,8 @@ console.log('[api] Initializing API Client with base URL:', API_BASE_URL)
 
 const DEFAULT_TIMEOUT = Number(import.meta.env.VITE_API_TIMEOUT || 10000)
 const LOCAL_USERS_KEY = 'campusconnect_static_users'
+const STATIC_QR_PREFIX = 'static-qr:'
+const STATIC_QR_TTL_SECONDS = 15
 
 const buildApiNotConfiguredError = () => {
   const err = new Error(
@@ -56,6 +58,34 @@ const toPublicLocalUser = (user) => ({
 })
 
 const createLocalToken = (userId) => `static-${userId}-${Date.now()}`
+
+const encodeStaticQrToken = (payload) => {
+  return `${STATIC_QR_PREFIX}${btoa(JSON.stringify(payload))}`
+}
+
+const decodeStaticQrToken = (token) => {
+  if (!token || !token.startsWith(STATIC_QR_PREFIX)) {
+    throw new Error('QR code format is invalid')
+  }
+
+  return JSON.parse(atob(token.slice(STATIC_QR_PREFIX.length)))
+}
+
+export const createStaticQrRotation = (session, rotationCount = 1) => {
+  const issuedAt = Date.now()
+  const expiresAt = new Date(issuedAt + STATIC_QR_TTL_SECONDS * 1000).toISOString()
+  const token = encodeStaticQrToken({
+    qrSessionId: session._id,
+    lectureId: session.lectureId,
+    subjectId: session.subjectId,
+    teacherId: session.teacherId || 'local-teacher',
+    rotationCount,
+    issuedAt,
+    expiresAt
+  })
+
+  return { token, expiresAt, rotationCount }
+}
 
 const staticAuth = {
   signup: async (userData) => {
@@ -125,6 +155,61 @@ const staticAuth = {
     }
 
     return { success: true, user: JSON.parse(localUser) }
+  }
+}
+
+const staticAttendance = {
+  startAttendance: async ({ lectureId, subjectId, subjectName, durationMinutes = 45 }) => {
+    const teacher = staticAuth.getCurrentUser ? await staticAuth.getCurrentUser().catch(() => null) : null
+    const session = {
+      _id: `local-session-${Date.now()}`,
+      lectureId,
+      subjectId,
+      subjectName: subjectName || subjectId,
+      teacherId: teacher?.user?._id || 'local-teacher',
+      active: true,
+      startedAt: Date.now(),
+      durationMinutes
+    }
+    const rotation = createStaticQrRotation(session, 1)
+
+    return {
+      success: true,
+      message: 'Static attendance session started',
+      qrSessionId: session._id,
+      token: rotation.token,
+      expiresAt: rotation.expiresAt,
+      rotationCount: rotation.rotationCount
+    }
+  },
+
+  endAttendance: async () => ({
+    success: true,
+    message: 'Static attendance session ended'
+  }),
+
+  scanAttendance: async ({ qrSessionId, token }) => {
+    const decoded = decodeStaticQrToken(token)
+    const expiresAt = new Date(decoded.expiresAt).getTime()
+
+    if (decoded.qrSessionId !== qrSessionId) {
+      throw { success: false, message: 'QR token does not match session' }
+    }
+
+    if (Number.isFinite(expiresAt) && expiresAt < Date.now()) {
+      throw { success: false, message: 'QR code expired. Ask the teacher to show the latest code.' }
+    }
+
+    return {
+      success: true,
+      message: 'Attendance marked locally',
+      attendance: {
+        _id: `local-attendance-${Date.now()}`,
+        qrSession: qrSessionId,
+        lectureId: decoded.lectureId,
+        timestamp: new Date().toISOString()
+      }
+    }
   }
 }
 
@@ -374,16 +459,21 @@ const authService = {
 
   // Logout
   logout: async () => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    localStorage.removeItem('rememberMe')
+    localStorage.removeItem('identifier')
+
+    if (apiUnavailableInProduction) {
+      return { success: true, message: 'Logged out' }
+    }
+
     try {
       await api.post('/auth/logout')
     } catch (error) {
       console.warn('[api] Logout endpoint failed', error?.message)
     }
-
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    localStorage.removeItem('rememberMe')
-    localStorage.removeItem('identifier')
+    return { success: true, message: 'Logged out' }
   },
 
   // Get local user data
@@ -433,6 +523,10 @@ const authService = {
 
   // Attendance: Start a live session
   startAttendance: async (payload) => {
+    if (apiUnavailableInProduction) {
+      return staticAttendance.startAttendance(payload)
+    }
+
     try {
       const response = await api.post('/attendance/start', payload)
       return response.data
@@ -443,6 +537,10 @@ const authService = {
 
   // Attendance: End the current session
   endAttendance: async (sessionId) => {
+    if (apiUnavailableInProduction) {
+      return staticAttendance.endAttendance(sessionId)
+    }
+
     try {
       const response = await api.post('/attendance/end', { sessionId })
       return response.data
@@ -453,6 +551,10 @@ const authService = {
 
   // Attendance: Scan a QR payload
   scanAttendance: async (payload) => {
+    if (apiUnavailableInProduction || payload?.token?.startsWith(STATIC_QR_PREFIX)) {
+      return staticAttendance.scanAttendance(payload)
+    }
+
     try {
       const response = await api.post('/attendance/scan', payload)
       return response.data

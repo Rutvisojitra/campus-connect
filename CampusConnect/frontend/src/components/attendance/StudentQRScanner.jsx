@@ -3,28 +3,37 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Html5Qrcode } from 'html5-qrcode'
 import { CheckCircle, QrCode, ShieldCheck, AlertTriangle, Camera, RefreshCcw } from 'lucide-react'
 import { useAttendance } from '../../context/AttendanceContext'
+import { useAuth } from '../../context/AuthContext'
 
 export default function StudentQRScanner() {
   const { scanAttendance, notifications, socketConnected, socketReconnecting, stats } = useAttendance()
+  const { user } = useAuth()
   const [scanStatus, setScanStatus] = useState(null)
   const [scanMessage, setScanMessage] = useState('Point your camera at the QR code to check in.')
   const [scannerError, setScannerError] = useState(null)
   const [cameraReady, setCameraReady] = useState(false)
+  const [lastScanTime, setLastScanTime] = useState(null)
   const scannerRef = useRef(null)
   const html5QrcodeRef = useRef(null)
+  const scanTimeoutRef = useRef(null)
 
   const scannerId = 'student-qr-reader'
 
   const formattedNotifications = useMemo(() => notifications.slice(-2), [notifications])
 
   const stopScanner = async () => {
+    if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current)
     if (html5QrcodeRef.current) {
       try {
         await html5QrcodeRef.current.stop()
-      } catch {
-        // ignore stop errors
+      } catch (error) {
+        console.warn('[qr-scanner] stop error', error)
       }
-      html5QrcodeRef.current.clear().catch(() => {})
+      try {
+        html5QrcodeRef.current.clear()
+      } catch (error) {
+        console.warn('[qr-scanner] clear error', error)
+      }
       html5QrcodeRef.current = null
     }
     setCameraReady(false)
@@ -33,47 +42,84 @@ export default function StudentQRScanner() {
   const startScanner = async () => {
     setScannerError(null)
     setScanStatus(null)
-    setScanMessage('Waiting for QR code…')
-
-    const html5Qrcode = new Html5Qrcode(scannerId)
-    html5QrcodeRef.current = html5Qrcode
-
-    const config = {
-      fps: 10,
-      qrbox: { width: 300, height: 300 },
-      rememberLastUsedCamera: true
-    }
-
-    const onScanSuccess = async (decodedText) => {
-      if (!decodedText) return
-      try {
-        const payload = JSON.parse(decodedText)
-        const { qrSessionId, token } = payload
-        if (!qrSessionId || !token) {
-          throw new Error('QR code format is invalid')
-        }
-
-        await scanAttendance({ qrSessionId, token })
-        setScanStatus('success')
-        setScanMessage('Attendance marked successfully. You are present!')
-        await stopScanner()
-      } catch (error) {
-        setScanStatus('error')
-        setScanMessage(error.message || 'Unable to scan QR code. Try again.')
-      }
-    }
-
-    const onScanError = (errorMessage) => {
-      if (!cameraReady) {
-        setScanMessage('Looking for a valid QR code…')
-      }
-      console.debug('[qr-scanner] scan error', errorMessage)
-    }
+    setScanMessage('Initializing camera…')
 
     try {
+      // Check if camera is available
       const devices = await Html5Qrcode.getCameras()
       if (!devices || devices.length === 0) {
-        throw new Error('No camera devices found')
+        throw new Error('No camera found on this device')
+      }
+
+      const html5Qrcode = new Html5Qrcode(scannerId)
+      html5QrcodeRef.current = html5Qrcode
+
+      const config = {
+        fps: 15,
+        qrbox: { width: 300, height: 300 },
+        rememberLastUsedCamera: true,
+        aspectRatio: 1.0
+      }
+
+      const onScanSuccess = async (decodedText) => {
+        if (!decodedText) return
+        
+        // Prevent duplicate scans within 2 seconds
+        const now = Date.now()
+        if (lastScanTime && now - lastScanTime < 2000) {
+          console.debug('[qr-scanner] Ignoring duplicate scan attempt')
+          return
+        }
+        setLastScanTime(now)
+
+        try {
+          let payload
+          try {
+            payload = JSON.parse(decodedText)
+          } catch {
+            throw new Error('Invalid QR code format')
+          }
+
+          const { qrSessionId, token } = payload
+          if (!qrSessionId || !token) {
+            throw new Error('QR code missing session or token')
+          }
+
+          // Validate user is a student
+          if (user && user.role && user.role !== 'student') {
+            throw new Error('Only students can scan attendance QR codes')
+          }
+
+          setScanMessage('Processing attendance…')
+          setScanStatus('processing')
+          
+          const result = await scanAttendance({ qrSessionId, token })
+          
+          if (result.success) {
+            setScanStatus('success')
+            setScanMessage('✓ Attendance marked successfully!')
+            // Keep scanner running for next scans
+            scanTimeoutRef.current = setTimeout(() => {
+              setScanStatus(null)
+              setScanMessage('Ready for next scan. Point camera at QR code.')
+            }, 2000)
+          }
+        } catch (error) {
+          console.error('[qr-scanner] scan error', error)
+          setScanStatus('error')
+          setScanMessage(error.message || 'Failed to mark attendance. Try again.')
+          scanTimeoutRef.current = setTimeout(() => {
+            setScanStatus(null)
+            setScanMessage('Ready to scan. Point camera at QR code.')
+          }, 3000)
+        }
+      }
+
+      const onScanError = (errorMessage) => {
+        // Silently ignore scanning errors - they're normal when searching for QR
+        if (cameraReady) {
+          console.debug('[qr-scanner] scan attempt', errorMessage)
+        }
       }
 
       await html5Qrcode.start(
@@ -84,12 +130,21 @@ export default function StudentQRScanner() {
       )
       setCameraReady(true)
       setScanStatus(null)
-      setScanMessage('Scanner ready. Hold the phone steady over the QR code.')
+      setScanMessage('✓ Camera ready. Point at the QR code.')
     } catch (error) {
       console.error('[qr-scanner] init failed', error)
-      setScannerError(error.message || 'Cannot start camera scanner')
-      setScanMessage('Camera access is required to scan QR codes. Please allow camera permission.')
-      stopScanner()
+      setScannerError(error.message || 'Camera access denied')
+      
+      if (error.message.includes('NotAllowedError')) {
+        setScanMessage('Camera permission was denied. Please allow camera access in your browser settings.')
+      } else if (error.message.includes('NotFoundError') || error.message.includes('No camera')) {
+        setScanMessage('No camera device found on this device.')
+      } else if (error.message.includes('NotReadableError')) {
+        setScanMessage('Camera is already in use by another application.')
+      } else {
+        setScanMessage('Unable to start camera. ' + (error.message || 'Please try again.'))
+      }
+      await stopScanner()
     }
   }
 
