@@ -17,6 +17,7 @@ const API_BASE_URL = normalizedApiUrl.startsWith('/')
 console.log('[api] Initializing API Client with base URL:', API_BASE_URL)
 
 const DEFAULT_TIMEOUT = Number(import.meta.env.VITE_API_TIMEOUT || 10000)
+const LOCAL_USERS_KEY = 'campusconnect_static_users'
 
 const buildApiNotConfiguredError = () => {
   const err = new Error(
@@ -25,6 +26,106 @@ const buildApiNotConfiguredError = () => {
   err.code = 'API_NOT_CONFIGURED'
   err.success = false
   return err
+}
+
+const getLocalUsers = () => {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_USERS_KEY)) || []
+  } catch {
+    return []
+  }
+}
+
+const saveLocalUsers = (users) => {
+  localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users))
+}
+
+const toPublicLocalUser = (user) => ({
+  _id: user._id,
+  userId: user._id,
+  name: user.name,
+  email: user.email,
+  role: user.role,
+  collegeId: user.collegeId || null,
+  department: user.department,
+  semester: user.semester,
+  firstLogin: false,
+  isActive: true,
+  createdAt: user.createdAt,
+  updatedAt: user.updatedAt
+})
+
+const createLocalToken = (userId) => `static-${userId}-${Date.now()}`
+
+const staticAuth = {
+  signup: async (userData) => {
+    const users = getLocalUsers()
+    const email = (userData.email || '').trim().toLowerCase()
+    const collegeId = (userData.collegeId || '').trim().toLowerCase()
+
+    if (users.some((user) => user.email === email || (collegeId && user.collegeId === collegeId))) {
+      throw { success: false, message: 'User already registered' }
+    }
+
+    const now = new Date().toISOString()
+    const user = {
+      _id: `local-${Date.now()}`,
+      name: (userData.name || '').trim(),
+      email,
+      password: userData.password,
+      collegeId,
+      role: userData.role || 'student',
+      department: userData.department || 'CSE',
+      semester: userData.semester,
+      createdAt: now,
+      updatedAt: now
+    }
+
+    users.push(user)
+    saveLocalUsers(users)
+
+    return {
+      success: true,
+      message: 'Account created locally for this browser.',
+      token: createLocalToken(user._id),
+      user: toPublicLocalUser(user)
+    }
+  },
+
+  login: async (identifier, password, rememberMe = false, role = null) => {
+    const normalizedIdentifier = (identifier || '').trim().toLowerCase()
+    const user = getLocalUsers().find((item) => (
+      item.email === normalizedIdentifier || item.collegeId === normalizedIdentifier
+    ))
+
+    if (!user) {
+      throw { success: false, message: 'Account not found. Please register first.', code: 'ACCOUNT_NOT_FOUND' }
+    }
+
+    if (role && user.role !== role) {
+      throw { success: false, message: 'This account is not registered for the selected role' }
+    }
+
+    if (user.password !== password) {
+      throw { success: false, message: 'Invalid email or password' }
+    }
+
+    return {
+      success: true,
+      message: 'Login successful.',
+      token: createLocalToken(user._id),
+      user: toPublicLocalUser(user)
+    }
+  },
+
+  getCurrentUser: async () => {
+    const localUser = localStorage.getItem('user')
+    if (!localUser) {
+      throw { success: false, message: 'No local user session' }
+    }
+
+    return { success: true, user: JSON.parse(localUser) }
+  }
 }
 
 const api = axios.create({
@@ -146,6 +247,10 @@ const authService = {
 
   // Login
   login: async (identifier, password, rememberMe = false, role = null) => {
+    if (apiUnavailableInProduction) {
+      return staticAuth.login(identifier, password, rememberMe, role)
+    }
+
     try {
       const response = await api.post('/auth/login', {
         identifier,
@@ -174,6 +279,10 @@ const authService = {
 
   // Signup / Register
   signup: async (userData) => {
+    if (apiUnavailableInProduction) {
+      return staticAuth.signup(userData)
+    }
+
     try {
       console.log('[api] Register request:', {
         url: `${API_BASE_URL}/auth/register`,
@@ -246,6 +355,10 @@ const authService = {
 
   // Get current logged in user
   getCurrentUser: async () => {
+    if (apiUnavailableInProduction) {
+      return staticAuth.getCurrentUser()
+    }
+
     try {
       const response = await api.get('/auth/me')
       return response.data

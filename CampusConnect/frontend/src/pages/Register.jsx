@@ -22,6 +22,7 @@ const getInitialRole = () => {
 
 export default function Register({ theme = 'dark', onToggleTheme }) {
   const navigate = useNavigate()
+  const staticAuthMode = !import.meta.env.DEV && !import.meta.env.VITE_API_URL
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -153,7 +154,9 @@ export default function Register({ theme = 'dark', onToggleTheme }) {
               </div>
               <h1 className="mt-8 text-4xl font-bold leading-tight">Create your CampusConnect account</h1>
               <p className="mt-4 text-white/85">
-                Your account is stored in MongoDB and can be used from any device after signup.
+                {staticAuthMode
+                  ? 'This static demo stores your account in this browser so you can explore the app.'
+                  : 'Your account is stored in MongoDB and can be used from any device after signup.'}
               </p>
               <div className="mt-8 rounded-xl bg-white/15 p-4 text-sm">
                 College ID is optional during signup. Email, password, and role are required.
