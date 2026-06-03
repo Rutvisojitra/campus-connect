@@ -313,6 +313,11 @@ const authService = {
       }
 
       if (error.request) {
+        if (!import.meta.env.DEV) {
+          console.warn('[api] Backend unreachable during signup. Falling back to static local account.')
+          return staticAuth.signup(userData)
+        }
+
         throw {
           success: false,
           message: `Cannot reach backend at ${API_BASE_URL}. Check that Express is running and CORS is configured.`
@@ -321,7 +326,7 @@ const authService = {
 
       throw {
         success: false,
-        message: error.message || 'Unable to send signup request'
+        message: error.message || 'Signup request could not be sent. Please check the backend connection.'
       }
     }
   },
